@@ -54,7 +54,13 @@ cp auto-switch ~/.local/bin/   # 或任意 $PATH 目录
 
 ```bash
 brew tap zhangweiii/tap
-brew install auto-switch
+brew install --cask zhangweiii/tap/auto-switch
+```
+
+升级到最新版本：
+
+```bash
+brew update && brew upgrade --cask zhangweiii/tap/auto-switch
 ```
 
 ---
@@ -155,8 +161,8 @@ claude -p "review PR"     # 非交互模式同样正常工作
 ```
 Claude Code accounts (2)
 
-  Alias          Email                         5h window                 7d window                 Expires
-  ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Alias          Email                         5h window                 7d window
+  ───────────────────────────────────────────────────────────────────────────────────────────
 * personal       user1@example.com             ████████░░  67% ↺1h23m   ███░░░░░  30% ↺5d12h
   work           user2@example.com             ░░░░░░░░░░   5% ↺3h10m   █░░░░░░░  10% ↺5d12h
 

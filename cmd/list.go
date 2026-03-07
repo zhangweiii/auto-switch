@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zhangweiii/auto-switch/internal/claude"
-	"github.com/zhangweiii/auto-switch/internal/store"
 )
 
 var listCmd = &cobra.Command{
@@ -47,7 +46,7 @@ func runList() error {
 	}
 	wg.Wait()
 
-	header := fmt.Sprintf("  %-14s %-28s  %-24s  %-24s  %s", "Alias", "Email", "5h window", "7d window", "Expires")
+	header := fmt.Sprintf("  %-14s %-28s  %-24s  %s", "Alias", "Email", "5h window", "7d window")
 	fmt.Println(header)
 	fmt.Println("  " + strings.Repeat("─", len(header)))
 
@@ -76,17 +75,8 @@ func runList() error {
 			sdStr = fmt.Sprintf("%s %3.0f%% ↺%-6s", sdBar, u.SevenDayUtilization, claude.FormatResetIn(u.SevenDayResetsAt))
 		}
 
-		// Token expiry
-		expDays := store.Credentials{ExpiresAt: a.Credentials.ExpiresAt}.DaysUntilExpiry()
-		expStr := ""
-		if expDays < 0 {
-			expStr = "expired!"
-		} else if expDays < 30 {
-			expStr = fmt.Sprintf("%dd", expDays)
-		}
-
-		fmt.Printf("%s%-14s %-28s  %-24s  %-24s  %s\n",
-			marker, a.Alias, a.Email, fhStr, sdStr, expStr)
+		fmt.Printf("%s%-14s %-28s  %-24s  %s\n",
+			marker, a.Alias, a.Email, fhStr, sdStr)
 	}
 
 	fmt.Printf("\n* active account  refreshed at %s\n", time.Now().Format("15:04:05"))

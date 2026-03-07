@@ -19,6 +19,31 @@ func (c Credentials) DaysUntilExpiry() int {
 	return int(time.Until(exp).Hours() / 24)
 }
 
+// FormatExpiry returns a human-readable expiry string.
+// Shows days when >= 1 day, hours when < 1 day, "expired!" when past.
+func (c Credentials) FormatExpiry() string {
+	if c.ExpiresAt == 0 {
+		return ""
+	}
+	exp := time.Unix(c.ExpiresAt/1000, 0)
+	d := time.Until(exp)
+	if d < 0 {
+		return "expired!"
+	}
+	if d < 24*time.Hour {
+		h := int(d.Hours())
+		if h == 0 {
+			return fmt.Sprintf("%dm", int(d.Minutes()))
+		}
+		return fmt.Sprintf("%dh", h)
+	}
+	days := int(d.Hours() / 24)
+	if days < 30 {
+		return fmt.Sprintf("%dd", days)
+	}
+	return ""
+}
+
 type Credentials struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`

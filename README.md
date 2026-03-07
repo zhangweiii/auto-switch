@@ -54,7 +54,13 @@ cp auto-switch ~/.local/bin/   # or any directory in $PATH
 
 ```bash
 brew tap zhangweiii/tap
-brew install auto-switch
+brew install --cask zhangweiii/tap/auto-switch
+```
+
+To update:
+
+```bash
+brew update && brew upgrade --cask zhangweiii/tap/auto-switch
 ```
 
 ---
@@ -155,8 +161,8 @@ claude -p "review PR"     # non-interactive mode works too
 ```
 Claude Code accounts (2)
 
-  Alias          Email                         5h window                 7d window                 Expires
-  ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Alias          Email                         5h window                 7d window
+  ───────────────────────────────────────────────────────────────────────────────────────────
 * personal       user1@example.com             ████████░░  67% ↺1h23m   ███░░░░░  30% ↺5d12h
   work           user2@example.com             ░░░░░░░░░░   5% ↺3h10m   █░░░░░░░  10% ↺5d12h
 
