@@ -1,0 +1,56 @@
+version: 2
+
+project_name: auto-switch
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - README.zh.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+brews:
+  - name: auto-switch
+    repository:
+      owner: zhangweiii
+      name: homebrew-tap
+    commit_author:
+      name: zhangweiii
+      email: zhangweigemini@gmail.com
+    homepage: "https://github.com/zhangweiii/auto-switch"
+    description: "Automatically switch between Claude Code accounts by lowest usage"
+    license: "MIT"
+    install: |
+      bin.install "auto-switch"
+    test: |
+      system "#{bin}/auto-switch", "--help"

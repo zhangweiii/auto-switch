@@ -53,7 +53,7 @@ cp auto-switch ~/.local/bin/   # or any directory in $PATH
 ### Homebrew (macOS / Linux)
 
 ```bash
-# coming soon
+brew tap zhangweiii/tap
 brew install auto-switch
 ```
 
@@ -206,7 +206,7 @@ Claude Code silently rotates its OAuth token from time to time. On every invocat
 - [x] Phase 1 — Claude Code multi-account switching
 - [ ] Phase 2 — OpenAI Codex support
 - [ ] Shell completion (zsh, bash, fish)
-- [ ] Homebrew formula
+- [x] Homebrew formula (via zhangweiii/homebrew-tap)
 
 ---
 
