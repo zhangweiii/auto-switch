@@ -54,14 +54,23 @@ cp auto-switch ~/.local/bin/   # or any directory in $PATH
 
 ```bash
 brew tap zhangweiii/tap
-brew install --cask zhangweiii/tap/auto-switch
+brew install zhangweiii/tap/auto-switch
 ```
 
 To update:
 
 ```bash
-brew update && brew upgrade --cask zhangweiii/tap/auto-switch
+brew update && brew upgrade zhangweiii/tap/auto-switch
 ```
+
+Migrating from the old cask:
+
+```bash
+brew uninstall --cask zhangweiii/tap/auto-switch
+brew install zhangweiii/tap/auto-switch
+```
+
+Your saved accounts and cache live under `~/.config/auto-switch` and system credentials storage, so migrating from the cask to the formula does not remove them.
 
 ---
 

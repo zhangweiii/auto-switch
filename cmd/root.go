@@ -7,10 +7,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var version = "dev"
+
 var rootCmd = &cobra.Command{
 	Use:   "auto-switch",
 	Short: "Automatically switch AI coding assistant accounts",
 	Long:  `auto-switch manages multiple Claude Code / Codex accounts and automatically selects the account with the lowest usage.`,
+	Version: version,
 }
 
 func Execute() {

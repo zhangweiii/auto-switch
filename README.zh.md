@@ -54,14 +54,23 @@ cp auto-switch ~/.local/bin/   # 或任意 $PATH 目录
 
 ```bash
 brew tap zhangweiii/tap
-brew install --cask zhangweiii/tap/auto-switch
+brew install zhangweiii/tap/auto-switch
 ```
 
 升级到最新版本：
 
 ```bash
-brew update && brew upgrade --cask zhangweiii/tap/auto-switch
+brew update && brew upgrade zhangweiii/tap/auto-switch
 ```
+
+如果你之前安装的是旧的 cask，请迁移到 formula：
+
+```bash
+brew uninstall --cask zhangweiii/tap/auto-switch
+brew install zhangweiii/tap/auto-switch
+```
+
+账号数据和缓存保存在 `~/.config/auto-switch` 以及系统凭据存储中，迁移安装方式通常不会删掉这些数据。
 
 ---
 
