@@ -1,6 +1,6 @@
 # auto-switch
 
-> 自动切换 Claude Code 账号，每次都使用剩余用量最多的那个。
+> 自动切换 Claude Code 和 Codex 账号，每次都使用剩余用量最多的那个。
 
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -12,7 +12,7 @@
 
 ## 为什么需要 auto-switch？
 
-如果你有多个 Claude Code 订阅（个人、工作、团队……），一定遇到过 5 小时窗口用完、被迫等待重置的情况。**auto-switch 消除这种等待**——每次运行 `claude` 时，它会自动选择用量最少的账号，让你的订阅配额利用率最大化。
+如果你有多个 Claude Code 或 Codex 订阅（个人、工作、团队……），一定遇到过 5 小时窗口用完、被迫等待重置的情况。**auto-switch 消除这种等待**——每次运行 `claude` / `codex` 时，它会自动选择用量最少的账号，让你的订阅配额利用率最大化。
 
 | 特性 | auto-switch | 手动切换 | CCS（代理） |
 |---|:---:|:---:|:---:|
@@ -78,44 +78,50 @@ brew install zhangweiii/tap/auto-switch
 
 ### 1. 保存第一个账号
 
-确保已经在 Claude Code 中登录，然后运行：
+确保已经在目标 CLI 中登录，然后运行：
 
 ```bash
 auto-switch login
 # 或通过 flag 跳过交互：
 auto-switch login --alias personal
+auto-switch login --provider codex --alias personal
 ```
 
 ### 2. 添加第二个账号
 
-在 Claude Code 中执行 `/logout`，用第二个账号登录，然后保存：
+先从对应 CLI 退出登录，再用第二个账号登录，然后保存：
 
 ```bash
 auto-switch login --alias work
+auto-switch login --provider codex --alias work
 ```
 
 ### 3. 自动切换并启动
 
 ```bash
 auto-switch claude
+auto-switch codex
 ```
 
-auto-switch 会查询所有账号的用量，选择剩余配额最多的账号启动 `claude`。
+auto-switch 会查询所有账号的用量，选择剩余配额最多的账号启动 `claude` / `codex`。
 
 ### 4. 透传参数
 
-所有参数都会原样转发给 `claude`：
+所有参数都会原样转发给目标 CLI：
 
 ```bash
 auto-switch claude --continue
 auto-switch claude -p "explain this file"
 auto-switch claude --model claude-opus-4-6
+auto-switch --account work codex
+auto-switch codex exec "review this repo"
 ```
 
 ### 5. 强制指定账号
 
 ```bash
-auto-switch claude --account work
+auto-switch --account work claude
+auto-switch --account work codex
 ```
 
 ---
@@ -159,11 +165,18 @@ claude -p "review PR"     # 非交互模式同样正常工作
 
 | 命令 | 说明 |
 |---|---|
-| `auto-switch login [--alias <名称>]` | 保存当前已登录的 Claude 账号 |
+| `auto-switch login [--provider <名称>] [--alias <名称>]` | 保存当前已登录的 Claude Code 或 Codex 账号 |
 | `auto-switch claude [参数...]` | 切换到用量最少的账号并启动 claude |
+| `auto-switch codex [参数...]` | 切换到用量最少的账号并启动 codex |
 | `auto-switch list` | 显示所有账号及实时用量进度条 |
 | `auto-switch status` | 详细用量视图，含重置倒计时 |
 | `auto-switch remove <别名>` | 删除已保存的账号 |
+
+按 provider 管理：
+- `auto-switch login --provider codex --alias work`
+- `auto-switch list --provider codex`
+- `auto-switch status --provider codex`
+- `auto-switch remove --provider codex work`
 
 ### `auto-switch list`
 
@@ -214,12 +227,14 @@ work (user2@example.com)
 
 Claude Code 会不定期静默刷新 OAuth token。auto-switch 每次运行时会自动对比 Keychain 中的最新 token 与配置中存储的值，如果不一致则自动更新 `accounts.json`。你不需要因为 token 被轮换而重新运行 `login`。
 
+对于 Codex，auto-switch 会把每个账号隔离到 `~/.config/auto-switch/codex/<alias>` 下独立的 `CODEX_HOME`。用量来自该账号最近一次会话日志里的 `rate_limits` 字段，因此 `auto-switch codex` 可以在不覆盖主 `~/.codex` 的前提下自动挑选当前用量最低的账号。
+
 ---
 
 ## Roadmap
 
 - [x] 一期 — Claude Code 多账号切换
-- [ ] 二期 — OpenAI Codex 支持
+- [x] 二期 — OpenAI Codex 支持
 - [ ] Shell 自动补全（zsh、bash、fish）
 - [x] Homebrew formula (via zhangweiii/homebrew-tap)
 

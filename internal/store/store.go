@@ -45,9 +45,12 @@ func (c Credentials) FormatExpiry() string {
 }
 
 type Credentials struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresAt    int64  `json:"expires_at"` // unix ms
+	AccessToken  string   `json:"access_token"`
+	RefreshToken string   `json:"refresh_token"`
+	ExpiresAt    int64    `json:"expires_at"` // unix ms
+	IDToken      string   `json:"id_token,omitempty"`
+	AccountID    string   `json:"account_id,omitempty"`
+	AuthMode     string   `json:"auth_mode,omitempty"`
 	Scopes       []string `json:"scopes,omitempty"`
 }
 
@@ -61,6 +64,7 @@ type Account struct {
 	AccountUUID string      `json:"account_uuid,omitempty"`
 	OrgName     string      `json:"org_name,omitempty"`
 	DisplayName string      `json:"display_name,omitempty"`
+	RawAuth     string      `json:"raw_auth,omitempty"`
 	CreatedAt   time.Time   `json:"created_at"`
 }
 
@@ -117,6 +121,11 @@ func (c *Config) AddAccount(a Account) error {
 			// update credentials of existing account
 			c.Accounts[i].Credentials = a.Credentials
 			c.Accounts[i].Alias = a.Alias
+			c.Accounts[i].OrgUUID = a.OrgUUID
+			c.Accounts[i].AccountUUID = a.AccountUUID
+			c.Accounts[i].OrgName = a.OrgName
+			c.Accounts[i].DisplayName = a.DisplayName
+			c.Accounts[i].RawAuth = a.RawAuth
 			return nil
 		}
 	}

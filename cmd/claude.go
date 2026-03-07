@@ -12,35 +12,13 @@ import (
 	"github.com/zhangweiii/auto-switch/internal/store"
 )
 
-var forceAccount string
-
 var claudeCmd = &cobra.Command{
 	Use:                "claude [args...]",
 	Short:              "Switch to the least-used Claude account and launch claude",
 	DisableFlagParsing: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Manually handle --account flag because DisableFlagParsing is set
-		account, remaining := extractAccountFlag(args)
-		return runClaude(account, remaining)
+		return runClaude(accountAlias, args)
 	},
-}
-
-// extractAccountFlag pulls --account=xxx or --account xxx out of args,
-// returning the alias and the remaining args to pass through to claude.
-func extractAccountFlag(args []string) (string, []string) {
-	var remaining []string
-	var account string
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--account" && i+1 < len(args) {
-			account = args[i+1]
-			i++ // skip value
-		} else if len(args[i]) > 9 && args[i][:9] == "--account" && args[i][9] == '=' {
-			account = args[i][10:]
-		} else {
-			remaining = append(remaining, args[i])
-		}
-	}
-	return account, remaining
 }
 
 func runClaude(accountAlias string, args []string) error {

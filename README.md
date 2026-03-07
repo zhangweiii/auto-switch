@@ -1,6 +1,6 @@
 # auto-switch
 
-> Automatically switch between Claude Code accounts — always use the one with the most quota remaining.
+> Automatically switch between Claude Code and Codex accounts — always use the one with the most quota remaining.
 
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -12,7 +12,7 @@
 
 ## Why auto-switch?
 
-If you use multiple Claude Code subscriptions (personal, work, team…), you've probably hit the 5-hour rate limit mid-session and waited for it to reset. **auto-switch eliminates that wait** by transparently routing each `claude` invocation to the account with the most headroom.
+If you use multiple Claude Code or Codex subscriptions (personal, work, team…), you've probably hit the 5-hour rate limit mid-session and waited for it to reset. **auto-switch eliminates that wait** by transparently routing each `claude` / `codex` invocation to the account with the most headroom.
 
 | Feature | auto-switch | Manual switching | CCS (proxy) |
 |---|:---:|:---:|:---:|
@@ -78,44 +78,50 @@ Your saved accounts and cache live under `~/.config/auto-switch` and system cred
 
 ### 1. Save your first account
 
-Make sure you are already logged in to Claude Code, then run:
+Make sure you are already logged in to the target CLI, then run:
 
 ```bash
 auto-switch login
 # or skip the prompt with a flag:
 auto-switch login --alias personal
+auto-switch login --provider codex --alias personal
 ```
 
 ### 2. Add a second account
 
-Inside Claude Code, run `/logout`, then log in with your second account. Then save it:
+Log out from that CLI, then log in with your second account. Then save it:
 
 ```bash
 auto-switch login --alias work
+auto-switch login --provider codex --alias work
 ```
 
 ### 3. Let auto-switch decide
 
 ```bash
 auto-switch claude
+auto-switch codex
 ```
 
-auto-switch checks the usage of every saved account and launches `claude` as the one with the most quota left.
+auto-switch checks the usage of every saved account and launches `claude` / `codex` as the one with the most quota left.
 
 ### 4. Pass arguments through
 
-All arguments are forwarded verbatim to `claude`:
+All arguments are forwarded verbatim to the target CLI:
 
 ```bash
 auto-switch claude --continue
 auto-switch claude -p "explain this file"
 auto-switch claude --model claude-opus-4-6
+auto-switch --account work codex
+auto-switch codex exec "review this repo"
 ```
 
 ### 5. Force a specific account
 
 ```bash
-auto-switch claude --account work
+auto-switch --account work claude
+auto-switch --account work codex
 ```
 
 ---
@@ -159,11 +165,18 @@ claude -p "review PR"     # non-interactive mode works too
 
 | Command | Description |
 |---|---|
-| `auto-switch login [--alias <name>]` | Save the currently logged-in Claude account |
+| `auto-switch login [--provider <name>] [--alias <name>]` | Save the currently logged-in Claude Code or Codex account |
 | `auto-switch claude [args...]` | Switch to least-used account and launch claude |
+| `auto-switch codex [args...]` | Switch to least-used account and launch codex |
 | `auto-switch list` | Show all accounts with live usage bars |
 | `auto-switch status` | Detailed usage view with reset countdowns |
 | `auto-switch remove <alias>` | Delete a saved account |
+
+Provider-aware management:
+- `auto-switch login --provider codex --alias work`
+- `auto-switch list --provider codex`
+- `auto-switch status --provider codex`
+- `auto-switch remove --provider codex work`
 
 ### `auto-switch list`
 
@@ -214,12 +227,14 @@ Cache behaviour:
 
 Claude Code silently rotates its OAuth token from time to time. On every invocation, auto-switch compares the token in the system Keychain against the stored value and updates `accounts.json` automatically if they differ. You never need to re-run `login` just because a token was rotated.
 
+For Codex, auto-switch stores each account in its own isolated `CODEX_HOME` under `~/.config/auto-switch/codex/<alias>`. Usage is inferred from the latest `rate_limits` data emitted into that account's local session logs, which lets `auto-switch codex` pick the least-used account without overwriting your main `~/.codex`.
+
 ---
 
 ## Roadmap
 
 - [x] Phase 1 — Claude Code multi-account switching
-- [ ] Phase 2 — OpenAI Codex support
+- [x] Phase 2 — OpenAI Codex support
 - [ ] Shell completion (zsh, bash, fish)
 - [x] Homebrew formula (via zhangweiii/homebrew-tap)
 

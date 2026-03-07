@@ -130,6 +130,10 @@ type Account struct {
     Provider    string    // "claude" | "codex"
     Credentials Credentials
     OrgUUID     string
+    AccountUUID string
+    OrgName     string
+    DisplayName string
+    RawAuth     string    // Codex auth.json payload for per-account homes
     CreatedAt   time.Time
 }
 
@@ -145,6 +149,8 @@ type Usage struct {
 }
 ```
 
+For Codex, `Credentials` also carries `IDToken`, `AccountID`, and `AuthMode`, which are used to identify the active account and rebuild isolated account homes under `~/.config/auto-switch/codex/<alias>`.
+
 ### 3.3 Config File
 
 Path: `~/.config/auto-switch/accounts.json`
@@ -159,14 +165,31 @@ Path: `~/.config/auto-switch/accounts.json`
       "email": "user1@example.com",
       "provider": "claude",
       "org_uuid": "xxx",
+      "account_uuid": "aaa",
+      "org_name": "My Org",
+      "display_name": "User One",
+      "credentials": {
+        "access_token": "sk-ant-...",
+        "refresh_token": "...",
+        "expires_at": 1767225600000
+      },
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
       "id": "uuid-2",
       "alias": "work",
       "email": "user2@example.com",
-      "provider": "claude",
-      "org_uuid": "yyy",
+      "provider": "codex",
+      "account_uuid": "acct_123",
+      "display_name": "user2@example.com",
+      "raw_auth": "{...}",
+      "credentials": {
+        "access_token": "eyJ...",
+        "refresh_token": "...",
+        "id_token": "eyJ...",
+        "account_id": "acct_123",
+        "auth_mode": "chatgpt"
+      },
       "created_at": "2026-01-01T00:00:00Z"
     }
   ]
@@ -177,6 +200,11 @@ Path: `~/.config/auto-switch/accounts.json`
 - macOS: Keychain, service=`auto-switch`, account=`<provider>:<account-id>`
 - Linux/Windows: `~/.config/auto-switch/credentials` (mode 0600)
 
+**Codex account homes**:
+- Shared user config remains in `~/.codex`
+- Each saved Codex account gets an isolated home at `~/.config/auto-switch/codex/<alias>`
+- `auth.json` is written into that isolated home, while shared files such as `config.toml`, `skills`, `memories`, and model caches are symlinked from `~/.codex`
+
 ---
 
 ## 4. CLI Command Design
@@ -184,18 +212,25 @@ Path: `~/.config/auto-switch/accounts.json`
 ### 4.1 Command Reference
 
 ```
-auto-switch <command> [options]
+auto-switch [global-flags] <command> [command-args...]
 
 Commands:
   login                Save the currently logged-in account
   claude [args...]     Switch to least-used Claude account and launch claude
+  codex [args...]      Switch to least-used Codex account and launch codex
   list                 List all accounts with current usage
   status               Show detailed real-time usage
   remove <alias>       Delete a saved account
   help                 Show help
 
-Flags (on the claude subcommand):
-  --account <alias>    Force a specific account (overrides auto-selection)
+Global flags:
+  --account <alias>    Force a specific saved account for the selected provider
+
+Per-command provider flags:
+  login --provider <provider>   Save credentials for claude or codex
+  list --provider <provider>    Show accounts for the selected provider
+  status --provider <provider>  Show usage for the selected provider
+  remove --provider <provider>  Remove a saved account for the selected provider
 ```
 
 ### 4.2 Example Output
@@ -342,28 +377,17 @@ OpenAI Codex CLI stores credentials at:
 
 ### 8.2 Extension Approach
 
-```go
-// Phase 2: implement the Provider interface for Codex
-type CodexProvider struct{}
+Codex support is now implemented directly in the CLI command layer rather than behind the abstract provider registry sketched earlier.
 
-func (p *CodexProvider) Name() string { return "codex" }
-func (p *CodexProvider) Login(ctx context.Context) (*Account, error) { ... }
-func (p *CodexProvider) GetUsage(ctx context.Context, a *Account) (*Usage, error) { ... }
-func (p *CodexProvider) Switch(ctx context.Context, a *Account) error { ... }
-func (p *CodexProvider) Launch(ctx context.Context, a *Account, args []string) error { ... }
-```
-
-Registration (uncomment to enable):
-```go
-var providers = map[string]provider.Provider{
-    "claude": claude.New(),
-    // "codex": codex.New(),  // uncomment in phase 2
-}
-```
+Current behaviour:
+- `auto-switch login --provider codex` reads `~/.codex/auth.json`, derives account identity from `id_token` or API key metadata, and stores the raw auth payload in `accounts.json`
+- `auto-switch codex [args...]` prepares an isolated `CODEX_HOME` for the chosen alias, clears conflicting env vars such as `OPENAI_API_KEY`, and `exec`s the real `codex` binary
+- Usage is fetched from `codex app-server` when available, then falls back to the latest `rate_limits` events found in account-local session logs or `state_5.sqlite`
+- The selected account is scored from 5h and 7d utilization, skipping clearly maxed accounts when possible
 
 ---
 
-## 9. Development Plan (Phase 1)
+## 9. Development Plan
 
 **M1 — Foundation**
 - [x] cobra command structure
@@ -386,12 +410,12 @@ var providers = map[string]provider.Provider{
 - [x] Least-used account selection strategy
 - [x] Credentials write (env var + file + Keychain)
 - [x] `auto-switch claude [args...]` command
-- [x] `--account` flag for forced selection
+- [x] Root-level `--account` flag for forced selection
 
 **M5 — Polish**
-- [ ] README
+- [x] README
 - [ ] Shell completion
-- [ ] Homebrew formula / install script
+- [x] Homebrew formula / install script
 
 ---
 

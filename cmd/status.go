@@ -8,17 +8,35 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zhangweiii/auto-switch/internal/claude"
+	"github.com/zhangweiii/auto-switch/internal/codex"
 )
+
+var statusProvider string
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show real-time usage for all accounts",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runStatus()
+		return runStatus(statusProvider)
 	},
 }
 
-func runStatus() error {
+func init() {
+	statusCmd.Flags().StringVarP(&statusProvider, "provider", "p", "claude", "provider to show (claude or codex)")
+}
+
+func runStatus(provider string) error {
+	switch provider {
+	case "claude":
+		return runClaudeStatus()
+	case "codex":
+		return runCodexStatus()
+	default:
+		return fmt.Errorf("unsupported provider %q", provider)
+	}
+}
+
+func runClaudeStatus() error {
 	cfg, err := loadAndSync()
 	if err != nil {
 		return err
@@ -83,6 +101,70 @@ func runStatus() error {
 			} else {
 				fmt.Printf("  ⚠️  Token expires in %d day(s)\n", days)
 			}
+		}
+	}
+
+	fmt.Println()
+	return nil
+}
+
+func runCodexStatus() error {
+	cfg, err := loadAndSync()
+	if err != nil {
+		return err
+	}
+
+	accounts := cfg.AccountsByProvider("codex")
+	if len(accounts) == 0 {
+		fmt.Println("No Codex accounts found. Run 'auto-switch login --provider codex' to add one.")
+		return nil
+	}
+
+	activeAccountID := codex.ActiveAccountID()
+
+	fmt.Println("Fetching usage...")
+	usages := make([]*codex.Usage, len(accounts))
+	var wg sync.WaitGroup
+	for i, a := range accounts {
+		wg.Add(1)
+		go func(idx int, alias string) {
+			defer wg.Done()
+			usages[idx] = codex.FetchUsageFromHome(codex.AccountHome(alias))
+		}(i, a.Alias)
+	}
+	wg.Wait()
+
+	fmt.Println()
+	fmt.Printf("Codex usage  (%s)\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Println(strings.Repeat("─", 60))
+
+	for i, a := range accounts {
+		u := usages[i]
+
+		activeMark := ""
+		if a.Credentials.AccountID != "" && a.Credentials.AccountID == activeAccountID {
+			activeMark = " [active]"
+		}
+		fmt.Printf("\n%s (%s)%s\n", a.Alias, a.Email, activeMark)
+
+		if u.Error != "" {
+			fmt.Printf("  usage unavailable: %s\n", u.Error)
+			continue
+		}
+
+		fhBar := codex.ProgressBar(u.PrimaryUtilization, 20)
+		sdBar := codex.ProgressBar(u.SecondaryUtilization, 20)
+		age := u.CacheAge()
+		if age != "" {
+			age = fmt.Sprintf(" (last seen %s ago)", age)
+		}
+
+		fmt.Printf("  5h window: %s %5.1f%%  resets in %s%s\n",
+			fhBar, u.PrimaryUtilization, codex.FormatResetIn(u.PrimaryResetsAt), age)
+		fmt.Printf("  7d window: %s %5.1f%%  resets in %s\n",
+			sdBar, u.SecondaryUtilization, codex.FormatResetIn(u.SecondaryResetsAt))
+		if u.PlanType != "" {
+			fmt.Printf("  plan: %s\n", u.PlanType)
 		}
 	}
 
