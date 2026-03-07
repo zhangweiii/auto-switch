@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -47,16 +46,7 @@ func runCodex(accountAlias string, args []string) error {
 	}
 
 	fmt.Printf("Checking usage for %d accounts...\n", len(accounts))
-	usages := make([]*codex.Usage, len(accounts))
-	var wg sync.WaitGroup
-	for i, a := range accounts {
-		wg.Add(1)
-		go func(idx int, alias string) {
-			defer wg.Done()
-			usages[idx] = codex.FetchUsageFromHome(codex.AccountHome(alias))
-		}(i, a.Alias)
-	}
-	wg.Wait()
+	usages := fetchCodexUsages(accounts)
 
 	fmt.Println()
 	bestIdx := -1

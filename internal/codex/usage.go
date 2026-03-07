@@ -6,12 +6,19 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/creack/pty"
+	"github.com/zhangweiii/auto-switch/internal/store"
 )
 
 type Usage struct {
@@ -21,8 +28,21 @@ type Usage struct {
 	SecondaryResetsAt    time.Time
 	PlanType             string
 	FetchedAt            time.Time
+	Cached               bool
 	Error                string
 }
+
+type cacheEntry struct {
+	Usage    Usage     `json:"usage"`
+	CachedAt time.Time `json:"cached_at"`
+}
+
+const (
+	successCacheTTL     = 1 * time.Minute
+	fallbackCacheMaxAge = 24 * time.Hour
+)
+
+var ansiRegexp = regexp.MustCompile(`\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-9;?]*[ -/]*[@-~])`)
 
 func (u *Usage) Score() float64 {
 	if u.Error != "" {
@@ -49,7 +69,62 @@ func (u *Usage) CacheAge() string {
 	return fmt.Sprintf("%dh", int(d.Hours()))
 }
 
+func cachePath() string {
+	return filepath.Join(store.ConfigDir(), "codex-usage-cache.json")
+}
+
+func loadCache() map[string]cacheEntry {
+	data, err := os.ReadFile(cachePath())
+	if err != nil {
+		return map[string]cacheEntry{}
+	}
+	var m map[string]cacheEntry
+	if err := json.Unmarshal(data, &m); err != nil {
+		return map[string]cacheEntry{}
+	}
+	return m
+}
+
+func saveCache(m map[string]cacheEntry) {
+	if err := os.MkdirAll(store.ConfigDir(), 0700); err != nil {
+		return
+	}
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(cachePath(), data, 0600)
+}
+
+func FetchUsageWithCache(home, cacheKey string) *Usage {
+	cache := loadCache()
+	if entry, ok := cache[cacheKey]; ok && time.Since(entry.CachedAt) < successCacheTTL {
+		u := entry.Usage
+		u.Cached = true
+		return &u
+	}
+
+	u := FetchUsageFromHome(home)
+	if u.Error == "" {
+		cache[cacheKey] = cacheEntry{Usage: *u, CachedAt: time.Now()}
+		saveCache(cache)
+		return u
+	}
+
+	if entry, ok := cache[cacheKey]; ok && time.Since(entry.CachedAt) < fallbackCacheMaxAge {
+		cached := entry.Usage
+		cached.Cached = true
+		return &cached
+	}
+
+	return u
+}
+
 func FetchUsageFromHome(home string) *Usage {
+	if usage, err := fetchUsageViaStatus(home); err == nil {
+		return usage
+	}
+
 	if usage, err := fetchUsageViaAppServer(home); err == nil {
 		return usage
 	}
@@ -68,7 +143,190 @@ func FetchUsageFromHome(home string) *Usage {
 			return usage
 		}
 	}
+
+	if sharedHome := SharedHome(); sharedHome != "" && sharedHome != home {
+		if files, err := sessionFiles(sharedHome); err == nil {
+			for _, file := range files {
+				if usage := usageFromFile(file, expectedPlan); usage != nil {
+					return usage
+				}
+			}
+		}
+	}
 	return &Usage{Error: "no Codex rate limit data found yet"}
+}
+
+func fetchUsageViaStatus(home string) (*Usage, error) {
+	codexPath, err := exec.LookPath("codex")
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.Command(codexPath, "-s", "read-only", "-a", "untrusted")
+	cmd.Env = append(os.Environ(), "CODEX_HOME="+home)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 60, Cols: 200})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = ptmx.Close() }()
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+
+	var (
+		buf bytes.Buffer
+		mu  sync.Mutex
+	)
+	go func() {
+		tmp := make([]byte, 8192)
+		for {
+			n, err := ptmx.Read(tmp)
+			if n > 0 {
+				chunk := tmp[:n]
+				mu.Lock()
+				_, _ = buf.Write(chunk)
+				mu.Unlock()
+				if bytes.Contains(chunk, []byte{0x1b, '[', '6', 'n'}) {
+					_, _ = io.WriteString(ptmx, "\x1b[1;1R")
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	deadline := time.Now().Add(8 * time.Second)
+	time.Sleep(400 * time.Millisecond)
+
+	sendStatus := func() error {
+		_, err := io.WriteString(ptmx, "/status\n")
+		return err
+	}
+
+	if err := sendStatus(); err != nil {
+		return nil, err
+	}
+	lastEnter := time.Now()
+	scriptSentAt := time.Now()
+	enterRetries := 0
+	statusRetries := 0
+
+	for time.Now().Before(deadline) {
+		text := cleanedOutput(&buf, &mu)
+		if strings.Contains(text, "5h limit:") && strings.Contains(text, "Weekly limit:") {
+			return parseStatusUsage(text)
+		}
+		if time.Since(lastEnter) >= 1200*time.Millisecond && enterRetries < 6 {
+			_, _ = io.WriteString(ptmx, "\r")
+			lastEnter = time.Now()
+			enterRetries++
+		}
+		if time.Since(scriptSentAt) >= 3*time.Second && statusRetries < 2 {
+			if err := sendStatus(); err == nil {
+				scriptSentAt = time.Now()
+				lastEnter = time.Now()
+				statusRetries++
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	msg := strings.TrimSpace(stderr.String())
+	if msg == "" {
+		msg = "timed out waiting for Codex /status output"
+	}
+	return nil, fmt.Errorf(msg)
+}
+
+func cleanedOutput(buf *bytes.Buffer, mu *sync.Mutex) string {
+	mu.Lock()
+	raw := buf.String()
+	mu.Unlock()
+
+	text := ansiRegexp.ReplaceAllString(raw, "")
+	text = strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			return r
+		case r < 32:
+			return -1
+		default:
+			return r
+		}
+	}, text)
+	return text
+}
+
+func parseStatusUsage(text string) (*Usage, error) {
+	accountRe := regexp.MustCompile(`Account:\s+([^\s]+)\s+\(([^)]+)\)`)
+	fiveHourRe := regexp.MustCompile(`5h limit:\s*\[[^\]]+\]\s*(\d+)% left\s*\(resets ([^)]+)\)`)
+	weeklyRe := regexp.MustCompile(`Weekly limit:\s*\[[^\]]+\]\s*(\d+)% left\s*\(resets ([^)]+)\)`)
+
+	accountMatch := accountRe.FindStringSubmatch(text)
+	fiveHourMatch := fiveHourRe.FindStringSubmatch(text)
+	weeklyMatch := weeklyRe.FindStringSubmatch(text)
+	if len(fiveHourMatch) != 3 || len(weeklyMatch) != 3 {
+		return nil, fmt.Errorf("Codex /status output missing limit details")
+	}
+
+	fiveLeft, err := strconv.Atoi(fiveHourMatch[1])
+	if err != nil {
+		return nil, err
+	}
+	weekLeft, err := strconv.Atoi(weeklyMatch[1])
+	if err != nil {
+		return nil, err
+	}
+
+	usage := &Usage{
+		PrimaryUtilization:   float64(100 - fiveLeft),
+		SecondaryUtilization: float64(100 - weekLeft),
+		FetchedAt:            time.Now(),
+	}
+	if len(accountMatch) == 3 {
+		usage.PlanType = strings.ToLower(strings.TrimSpace(accountMatch[2]))
+	}
+
+	if usage.PrimaryResetsAt, err = parseStatusReset(fiveHourMatch[2]); err != nil {
+		return nil, err
+	}
+	if usage.SecondaryResetsAt, err = parseStatusReset(weeklyMatch[2]); err != nil {
+		return nil, err
+	}
+	return usage, nil
+}
+
+func parseStatusReset(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	now := time.Now()
+	loc := now.Location()
+
+	if !strings.Contains(raw, " on ") {
+		t, err := time.ParseInLocation("15:04", raw, loc)
+		if err != nil {
+			return time.Time{}, err
+		}
+		reset := time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, loc)
+		if !reset.After(now) {
+			reset = reset.Add(24 * time.Hour)
+		}
+		return reset, nil
+	}
+
+	parts := strings.SplitN(raw, " on ", 2)
+	tm, err := time.ParseInLocation("15:04 2 Jan 2006", parts[0]+" "+parts[1]+" "+strconv.Itoa(now.Year()), loc)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if !tm.After(now) {
+		tm = tm.AddDate(1, 0, 0)
+	}
+	return tm, nil
 }
 
 func sessionFiles(home string) ([]string, error) {
@@ -427,6 +685,9 @@ func FormatResetIn(t time.Time) string {
 
 func ProgressBar(pct float64, width int) string {
 	filled := int(pct / 100 * float64(width))
+	if pct > 0 && filled == 0 {
+		filled = 1
+	}
 	if filled > width {
 		filled = width
 	}

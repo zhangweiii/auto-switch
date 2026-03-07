@@ -123,16 +123,7 @@ func runCodexStatus() error {
 	activeAccountID := codex.ActiveAccountID()
 
 	fmt.Println("Fetching usage...")
-	usages := make([]*codex.Usage, len(accounts))
-	var wg sync.WaitGroup
-	for i, a := range accounts {
-		wg.Add(1)
-		go func(idx int, alias string) {
-			defer wg.Done()
-			usages[idx] = codex.FetchUsageFromHome(codex.AccountHome(alias))
-		}(i, a.Alias)
-	}
-	wg.Wait()
+	usages := fetchCodexUsages(accounts)
 
 	fmt.Println()
 	fmt.Printf("Codex usage  (%s)\n", time.Now().Format("2006-01-02 15:04:05"))

@@ -192,6 +192,9 @@ func FormatResetIn(t time.Time) string {
 // ProgressBar returns a fixed-width ASCII progress bar.
 func ProgressBar(pct float64, width int) string {
 	filled := int(pct / 100 * float64(width))
+	if pct > 0 && filled == 0 {
+		filled = 1
+	}
 	if filled > width {
 		filled = width
 	}
