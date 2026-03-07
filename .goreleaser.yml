@@ -45,6 +45,7 @@ homebrew_casks:
     repository:
       owner: zhangweiii
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     commit_author:
       name: zhangweiii
       email: zhangweigemini@gmail.com
