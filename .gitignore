@@ -1,0 +1,5 @@
+# build output
+auto-switch
+
+# Claude Code local data
+.claude/
