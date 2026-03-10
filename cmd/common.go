@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/zhangweiii/auto-switch/internal/claude"
 	"github.com/zhangweiii/auto-switch/internal/codex"
@@ -61,7 +62,20 @@ func loadAndSync() (*store.Config, error) {
 	return cfg, nil
 }
 
+// tokenNeedsRefresh reports whether the stored token should be proactively
+// refreshed.  We only refresh when it expires within the next hour so that we
+// don't race with Claude Code's own background refresh (refresh-token rotation
+// means two concurrent refresh attempts will leave one with a 400).
+func tokenNeedsRefresh(expiresAtMs int64) bool {
+	if expiresAtMs == 0 {
+		return false // unknown expiry – don't touch
+	}
+	return time.UnixMilli(expiresAtMs).Before(time.Now().Add(time.Hour))
+}
+
 // refreshClaudeCredentials refreshes all saved Claude account credentials in-place.
+// It only contacts the server when a token is about to expire (< 1 hour remaining)
+// to avoid racing with Claude Code's background token rotation.
 func refreshClaudeCredentials(cfg *store.Config) error {
 	updated := false
 
@@ -70,6 +84,9 @@ func refreshClaudeCredentials(cfg *store.Config) error {
 			continue
 		}
 		if a.Credentials.RefreshToken == "" {
+			continue
+		}
+		if !tokenNeedsRefresh(a.Credentials.ExpiresAt) {
 			continue
 		}
 

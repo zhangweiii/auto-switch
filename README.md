@@ -228,7 +228,7 @@ Cache behaviour:
 Claude Code silently rotates its OAuth token from time to time. auto-switch keeps this in sync in two ways:
 
 - On every invocation, it compares the currently active Claude Code token in Keychain / credentials file with the stored value and updates `accounts.json` if they differ.
-- On `auto-switch claude` and `auto-switch list`, it also refreshes every saved Claude account with its own `refresh_token` before checking usage or launching Claude. This keeps rarely-used accounts alive instead of letting their credentials go stale.
+- On `auto-switch claude` and `auto-switch list`, it proactively refreshes any saved Claude account whose token expires within the next hour using that account's `refresh_token`. Tokens with plenty of remaining validity are left untouched to avoid racing with Claude Code's own background refresh rotation.
 
 You never need to re-run `login` just because a token was rotated.
 
