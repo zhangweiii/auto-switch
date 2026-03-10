@@ -326,6 +326,8 @@ Claude Code silently refreshes the OAuth token. On every `list`, `status`, and `
 2. Reads the latest token from Keychain / credentials file
 3. If the token differs from what is stored, updates `accounts.json` automatically
 
+Additionally, on `auto-switch list` and `auto-switch claude`, auto-switch refreshes every saved Claude account directly through the OAuth refresh-token flow before querying usage or switching accounts. This prevents infrequently selected accounts from sitting idle long enough for their credentials to expire.
+
 ### 6.3 Credential File Formats
 
 `~/.claude/.credentials.json`:

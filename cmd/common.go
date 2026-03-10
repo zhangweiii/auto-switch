@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/zhangweiii/auto-switch/internal/claude"
 	"github.com/zhangweiii/auto-switch/internal/codex"
 	"github.com/zhangweiii/auto-switch/internal/store"
@@ -57,4 +59,48 @@ func loadAndSync() (*store.Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// refreshClaudeCredentials refreshes all saved Claude account credentials in-place.
+func refreshClaudeCredentials(cfg *store.Config) error {
+	updated := false
+
+	for i, a := range cfg.Accounts {
+		if a.Provider != "claude" {
+			continue
+		}
+		if a.Credentials.RefreshToken == "" {
+			continue
+		}
+
+		refreshed, err := claude.RefreshCredentials(&claude.OAuthToken{
+			AccessToken:  a.Credentials.AccessToken,
+			RefreshToken: a.Credentials.RefreshToken,
+			ExpiresAt:    a.Credentials.ExpiresAt,
+			Scopes:       a.Credentials.Scopes,
+		})
+		if err != nil {
+			fmt.Printf("warning: refresh credentials for %q failed: %v\n", a.Alias, err)
+			continue
+		}
+
+		if refreshed.AccessToken == a.Credentials.AccessToken &&
+			refreshed.RefreshToken == a.Credentials.RefreshToken &&
+			refreshed.ExpiresAt == a.Credentials.ExpiresAt {
+			continue
+		}
+
+		cfg.Accounts[i].Credentials.AccessToken = refreshed.AccessToken
+		cfg.Accounts[i].Credentials.RefreshToken = refreshed.RefreshToken
+		cfg.Accounts[i].Credentials.ExpiresAt = refreshed.ExpiresAt
+		cfg.Accounts[i].Credentials.Scopes = refreshed.Scopes
+		updated = true
+	}
+
+	if updated {
+		if err := store.Save(cfg); err != nil {
+			return fmt.Errorf("save refreshed Claude credentials: %w", err)
+		}
+	}
+	return nil
 }

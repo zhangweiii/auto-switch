@@ -4,3 +4,6 @@ dist/
 
 # Claude Code local data
 .claude/
+
+# local build caches
+.gocache/

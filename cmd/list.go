@@ -42,6 +42,9 @@ func runClaudeList() error {
 	if err != nil {
 		return err
 	}
+	if err := refreshClaudeCredentials(cfg); err != nil {
+		return err
+	}
 
 	accounts := cfg.AccountsByProvider("claude")
 	if len(accounts) == 0 {

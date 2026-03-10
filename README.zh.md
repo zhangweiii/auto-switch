@@ -225,7 +225,12 @@ work (user2@example.com)
 
 ## Token 自动同步
 
-Claude Code 会不定期静默刷新 OAuth token。auto-switch 每次运行时会自动对比 Keychain 中的最新 token 与配置中存储的值，如果不一致则自动更新 `accounts.json`。你不需要因为 token 被轮换而重新运行 `login`。
+Claude Code 会不定期静默刷新 OAuth token。auto-switch 会通过两种方式保持同步：
+
+- 每次运行时，自动对比当前活跃 Claude Code 账号在 Keychain / 凭证文件中的最新 token 与 `accounts.json` 中存储的值，不一致就自动更新。
+- 在 `auto-switch claude` 和 `auto-switch list` 时，还会对所有已保存的 Claude 账号逐个使用各自的 `refresh_token` 刷新凭证，再进行用量查询或启动 Claude。这样长期未被选中的账号也不容易因为闲置而凭证超时。
+
+你不需要因为 token 被轮换而重新运行 `login`。
 
 对于 Codex，auto-switch 会把每个账号隔离到 `~/.config/auto-switch/codex/<alias>` 下独立的 `CODEX_HOME`。用量来自该账号最近一次会话日志里的 `rate_limits` 字段，因此 `auto-switch codex` 可以在不覆盖主 `~/.codex` 的前提下自动挑选当前用量最低的账号。
 

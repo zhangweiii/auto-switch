@@ -3,6 +3,8 @@ package claude
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,6 +56,13 @@ type OAuthAccount struct {
 }
 
 const keychainService = "Claude Code-credentials"
+
+const (
+	oauthTokenURL      = "https://platform.claude.com/v1/oauth/token"
+	oauthClientID      = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	oauthBetaHeader    = "oauth-2025-04-20"
+	claudeCLIUserAgent = "auto-switch"
+)
 
 // ReadCurrentCredentials reads the active Claude Code OAuth token.
 // It tries the macOS Keychain first, then falls back to ~/.claude/.credentials.json.
@@ -180,4 +189,77 @@ func currentUsername() string {
 		return "user"
 	}
 	return strings.TrimSpace(string(out))
+}
+
+type refreshTokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+	Scope        string `json:"scope"`
+}
+
+// RefreshCredentials exchanges a saved refresh token for a fresh access token.
+func RefreshCredentials(token *OAuthToken) (*OAuthToken, error) {
+	if token == nil {
+		return nil, fmt.Errorf("missing token")
+	}
+	if token.RefreshToken == "" {
+		return nil, fmt.Errorf("missing refresh token")
+	}
+
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", token.RefreshToken)
+	form.Set("client_id", oauthClientID)
+
+	req, err := http.NewRequest(http.MethodPost, oauthTokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("anthropic-beta", oauthBetaHeader)
+	req.Header.Set("User-Agent", claudeCLIUserAgent)
+
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("refresh failed with status %s", resp.Status)
+	}
+
+	var body refreshTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	if body.AccessToken == "" {
+		return nil, fmt.Errorf("refresh response missing access token")
+	}
+
+	refreshToken := token.RefreshToken
+	if body.RefreshToken != "" {
+		refreshToken = body.RefreshToken
+	}
+
+	expiresAt := token.ExpiresAt
+	if body.ExpiresIn > 0 {
+		expiresAt = time.Now().Add(time.Duration(body.ExpiresIn) * time.Second).UnixMilli()
+	}
+
+	scopes := token.Scopes
+	if body.Scope != "" {
+		scopes = strings.Fields(body.Scope)
+	}
+
+	return &OAuthToken{
+		AccessToken:      body.AccessToken,
+		RefreshToken:     refreshToken,
+		ExpiresAt:        expiresAt,
+		Scopes:           scopes,
+		SubscriptionType: token.SubscriptionType,
+		RateLimitTier:    token.RateLimitTier,
+	}, nil
 }

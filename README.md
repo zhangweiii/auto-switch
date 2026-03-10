@@ -225,7 +225,12 @@ Cache behaviour:
 
 ## Token auto-sync
 
-Claude Code silently rotates its OAuth token from time to time. On every invocation, auto-switch compares the token in the system Keychain against the stored value and updates `accounts.json` automatically if they differ. You never need to re-run `login` just because a token was rotated.
+Claude Code silently rotates its OAuth token from time to time. auto-switch keeps this in sync in two ways:
+
+- On every invocation, it compares the currently active Claude Code token in Keychain / credentials file with the stored value and updates `accounts.json` if they differ.
+- On `auto-switch claude` and `auto-switch list`, it also refreshes every saved Claude account with its own `refresh_token` before checking usage or launching Claude. This keeps rarely-used accounts alive instead of letting their credentials go stale.
+
+You never need to re-run `login` just because a token was rotated.
 
 For Codex, auto-switch stores each account in its own isolated `CODEX_HOME` under `~/.config/auto-switch/codex/<alias>`. Usage is inferred from the latest `rate_limits` data emitted into that account's local session logs, which lets `auto-switch codex` pick the least-used account without overwriting your main `~/.codex`.
 
