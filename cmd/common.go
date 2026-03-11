@@ -62,9 +62,9 @@ func loadAndSync() (*store.Config, error) {
 	return cfg, nil
 }
 
-// tokenNeedsRefresh reports whether the stored token should be proactively
-// refreshed.  We only refresh when it expires within the next hour so that we
-// don't race with Claude Code's own background refresh (refresh-token rotation
+// tokenNeedsRefresh reports whether the stored token for the currently active
+// Claude Code account should be proactively refreshed. The narrow 1-hour window
+// avoids racing with Claude Code's own background refresh (refresh-token rotation
 // means two concurrent refresh attempts will leave one with a 400).
 func tokenNeedsRefresh(expiresAtMs int64) bool {
 	if expiresAtMs == 0 {
@@ -73,10 +73,43 @@ func tokenNeedsRefresh(expiresAtMs int64) bool {
 	return time.UnixMilli(expiresAtMs).Before(time.Now().Add(time.Hour))
 }
 
+// tokenNeedsRefreshInactive reports whether a background (non-active) account's
+// token should be proactively refreshed. Inactive accounts are never touched by
+// Claude Code's background rotation, so we can use a wider look-ahead window.
+//
+// When both issuedAt and expiresAt are known the window is computed dynamically
+// as half the token's total lifetime — the token is refreshed once more than half
+// of its validity period has elapsed. This self-calibrates to Claude's actual
+// OAuth token lifetime without any hardcoded duration.
+//
+// For tokens whose issuedAt is not recorded (e.g. accounts saved before this
+// field was added) we fall back to a 24-hour look-ahead as a safe default.
+func tokenNeedsRefreshInactive(expiresAt, issuedAt int64) bool {
+	if expiresAt == 0 {
+		return false // unknown expiry – don't touch
+	}
+	now := time.Now()
+	expiry := time.UnixMilli(expiresAt)
+	if issuedAt != 0 {
+		lifetime := expiry.Sub(time.UnixMilli(issuedAt))
+		if lifetime > 0 {
+			// Refresh when remaining time < half the total lifetime.
+			return expiry.Sub(now) < lifetime/2
+		}
+		// lifetime <= 0 means issuedAt >= expiresAt (clock skew or corrupt data);
+		// fall through to the 24-hour fallback below.
+	}
+	// Fallback for tokens without an IssuedAt: refresh within 24 hours of expiry.
+	return expiry.Before(now.Add(24 * time.Hour))
+}
+
 // refreshClaudeCredentials refreshes all saved Claude account credentials in-place.
-// It only contacts the server when a token is about to expire (< 1 hour remaining)
-// to avoid racing with Claude Code's background token rotation.
-func refreshClaudeCredentials(cfg *store.Config) error {
+// activeEmail identifies the account currently active in Claude Code; its token is
+// only refreshed when expiring within 1 hour to avoid racing with Claude Code's own
+// background refresh. Tokens for all other (inactive) accounts are refreshed once
+// more than half of their total validity period has elapsed, so the window
+// self-calibrates to Claude's actual OAuth token lifetime.
+func refreshClaudeCredentials(cfg *store.Config, activeEmail string) error {
 	updated := false
 
 	for i, a := range cfg.Accounts {
@@ -86,7 +119,17 @@ func refreshClaudeCredentials(cfg *store.Config) error {
 		if a.Credentials.RefreshToken == "" {
 			continue
 		}
-		if !tokenNeedsRefresh(a.Credentials.ExpiresAt) {
+		// Active account: narrow window to avoid racing Claude Code's refresh.
+		// Inactive accounts: wider window so rarely-used accounts stay fresh.
+		// When activeEmail is empty we cannot determine which account is active,
+		// so fall back to the narrow window for all accounts to stay safe.
+		needsRefresh := false
+		if activeEmail == "" || a.Email == activeEmail {
+			needsRefresh = tokenNeedsRefresh(a.Credentials.ExpiresAt)
+		} else {
+			needsRefresh = tokenNeedsRefreshInactive(a.Credentials.ExpiresAt, a.Credentials.IssuedAt)
+		}
+		if !needsRefresh {
 			continue
 		}
 
@@ -110,6 +153,7 @@ func refreshClaudeCredentials(cfg *store.Config) error {
 		cfg.Accounts[i].Credentials.AccessToken = refreshed.AccessToken
 		cfg.Accounts[i].Credentials.RefreshToken = refreshed.RefreshToken
 		cfg.Accounts[i].Credentials.ExpiresAt = refreshed.ExpiresAt
+		cfg.Accounts[i].Credentials.IssuedAt = time.Now().UnixMilli()
 		cfg.Accounts[i].Credentials.Scopes = refreshed.Scopes
 		updated = true
 	}

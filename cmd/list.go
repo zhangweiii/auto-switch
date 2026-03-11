@@ -42,7 +42,7 @@ func runClaudeList() error {
 	if err != nil {
 		return err
 	}
-	if err := refreshClaudeCredentials(cfg); err != nil {
+	if err := refreshClaudeCredentials(cfg, claude.ActiveEmail()); err != nil {
 		return err
 	}
 
