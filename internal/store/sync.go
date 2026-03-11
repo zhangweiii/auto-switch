@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"time"
 )
 
 // SyncActiveToken checks whether the currently active Claude Code account matches
@@ -27,6 +28,7 @@ func SyncActiveToken(cfg *Config, readCurrentToken func() (accessToken, refreshT
 				cfg.Accounts[i].Credentials.AccessToken = accessToken
 				cfg.Accounts[i].Credentials.RefreshToken = refreshToken
 				cfg.Accounts[i].Credentials.ExpiresAt = expiresAt
+				cfg.Accounts[i].Credentials.IssuedAt = time.Now().UnixMilli()
 				updated = true
 				fmt.Printf("auto-synced token for %q\n", a.Alias)
 			}

@@ -47,7 +47,8 @@ func (c Credentials) FormatExpiry() string {
 type Credentials struct {
 	AccessToken  string   `json:"access_token"`
 	RefreshToken string   `json:"refresh_token"`
-	ExpiresAt    int64    `json:"expires_at"` // unix ms
+	ExpiresAt    int64    `json:"expires_at"`  // unix ms
+	IssuedAt     int64    `json:"issued_at,omitempty"` // unix ms; set when token is saved or refreshed
 	IDToken      string   `json:"id_token,omitempty"`
 	AccountID    string   `json:"account_id,omitempty"`
 	AuthMode     string   `json:"auth_mode,omitempty"`

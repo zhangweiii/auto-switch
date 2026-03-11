@@ -95,6 +95,7 @@ func runClaudeLogin(alias string) error {
 			AccessToken:  cred.AccessToken,
 			RefreshToken: cred.RefreshToken,
 			ExpiresAt:    cred.ExpiresAt,
+			IssuedAt:     time.Now().UnixMilli(),
 		},
 		OrgUUID:     account.OrganizationUUID,
 		AccountUUID: account.AccountUUID,
