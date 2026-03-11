@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/zhangweiii/auto-switch/internal/claude"
@@ -26,7 +27,7 @@ func runClaude(accountAlias string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := refreshClaudeCredentials(cfg); err != nil {
+	if err := refreshClaudeCredentials(cfg, claude.ActiveEmail()); err != nil {
 		return err
 	}
 
@@ -105,10 +106,18 @@ func runClaude(accountAlias string, args []string) error {
 
 // switchAndLaunch writes credentials and replaces the current process with claude.
 func switchAndLaunch(a store.Account, args []string) error {
+	// Warn clearly if the token is expired so the user knows to re-login rather
+	// than silently launching Claude Code with invalid credentials.
+	if a.Credentials.ExpiresAt != 0 && time.Now().After(time.UnixMilli(a.Credentials.ExpiresAt)) {
+		fmt.Fprintf(os.Stderr, "warning: token for account %q (%s) has expired\n", a.Alias, a.Email)
+		fmt.Fprintf(os.Stderr, "  To refresh: log in to Claude Code as %s, then run 'auto-switch login --alias %s'.\n", a.Email, a.Alias)
+	}
+
 	token := &claude.OAuthToken{
 		AccessToken:  a.Credentials.AccessToken,
 		RefreshToken: a.Credentials.RefreshToken,
 		ExpiresAt:    a.Credentials.ExpiresAt,
+		Scopes:       a.Credentials.Scopes,
 	}
 
 	if err := claude.WriteCredentials(token); err != nil {

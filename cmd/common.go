@@ -62,9 +62,9 @@ func loadAndSync() (*store.Config, error) {
 	return cfg, nil
 }
 
-// tokenNeedsRefresh reports whether the stored token should be proactively
-// refreshed.  We only refresh when it expires within the next hour so that we
-// don't race with Claude Code's own background refresh (refresh-token rotation
+// tokenNeedsRefresh reports whether the stored token for the currently active
+// Claude Code account should be proactively refreshed. The narrow 1-hour window
+// avoids racing with Claude Code's own background refresh (refresh-token rotation
 // means two concurrent refresh attempts will leave one with a 400).
 func tokenNeedsRefresh(expiresAtMs int64) bool {
 	if expiresAtMs == 0 {
@@ -73,10 +73,24 @@ func tokenNeedsRefresh(expiresAtMs int64) bool {
 	return time.UnixMilli(expiresAtMs).Before(time.Now().Add(time.Hour))
 }
 
+// tokenNeedsRefreshInactive reports whether a background (non-active) account's
+// token should be proactively refreshed. Inactive accounts are never touched by
+// Claude Code's background rotation, so a 7-day look-ahead is safe and prevents
+// infrequently-used accounts from accumulating expired credentials.
+func tokenNeedsRefreshInactive(expiresAtMs int64) bool {
+	if expiresAtMs == 0 {
+		return false // unknown expiry – don't touch
+	}
+	return time.UnixMilli(expiresAtMs).Before(time.Now().Add(7 * 24 * time.Hour))
+}
+
 // refreshClaudeCredentials refreshes all saved Claude account credentials in-place.
-// It only contacts the server when a token is about to expire (< 1 hour remaining)
-// to avoid racing with Claude Code's background token rotation.
-func refreshClaudeCredentials(cfg *store.Config) error {
+// activeEmail identifies the account currently active in Claude Code; its token is
+// only refreshed when expiring within 1 hour to avoid racing with Claude Code's own
+// background refresh. Tokens for all other (inactive) accounts are refreshed when
+// expiring within 7 days so that infrequently-used accounts don't silently
+// accumulate expired credentials.
+func refreshClaudeCredentials(cfg *store.Config, activeEmail string) error {
 	updated := false
 
 	for i, a := range cfg.Accounts {
@@ -86,7 +100,17 @@ func refreshClaudeCredentials(cfg *store.Config) error {
 		if a.Credentials.RefreshToken == "" {
 			continue
 		}
-		if !tokenNeedsRefresh(a.Credentials.ExpiresAt) {
+		// Active account: narrow window to avoid racing Claude Code's refresh.
+		// Inactive accounts: wider window so rarely-used accounts stay fresh.
+		// When activeEmail is empty we cannot determine which account is active,
+		// so fall back to the narrow window for all accounts to stay safe.
+		needsRefresh := false
+		if activeEmail == "" || a.Email == activeEmail {
+			needsRefresh = tokenNeedsRefresh(a.Credentials.ExpiresAt)
+		} else {
+			needsRefresh = tokenNeedsRefreshInactive(a.Credentials.ExpiresAt)
+		}
+		if !needsRefresh {
 			continue
 		}
 
