@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -41,6 +40,9 @@ func runClaudeStatus() error {
 	if err != nil {
 		return err
 	}
+	if err := refreshClaudeCredentials(cfg); err != nil {
+		return err
+	}
 
 	accounts := cfg.AccountsByProvider("claude")
 	if len(accounts) == 0 {
@@ -51,16 +53,7 @@ func runClaudeStatus() error {
 	activeEmail := claude.ActiveEmail()
 
 	fmt.Println("Fetching usage...")
-	usages := make([]*claude.Usage, len(accounts))
-	var wg sync.WaitGroup
-	for i, a := range accounts {
-		wg.Add(1)
-		go func(idx int, email, token string) {
-			defer wg.Done()
-			usages[idx] = claude.FetchUsageWithCache(token, email)
-		}(i, a.Email, a.Credentials.AccessToken)
-	}
-	wg.Wait()
+	usages := fetchClaudeUsages(accounts)
 
 	fmt.Println()
 	fmt.Printf("Claude Code usage  (%s)\n", time.Now().Format("2006-01-02 15:04:05"))

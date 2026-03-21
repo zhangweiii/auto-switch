@@ -23,7 +23,9 @@ func SyncActiveToken(cfg *Config, readCurrentToken func() (accessToken, refreshT
 	updated := false
 	for i, a := range cfg.Accounts {
 		if a.Provider == "claude" && a.Email == activeEmail {
-			if cfg.Accounts[i].Credentials.AccessToken != accessToken {
+			if cfg.Accounts[i].Credentials.AccessToken != accessToken ||
+				cfg.Accounts[i].Credentials.RefreshToken != refreshToken ||
+				cfg.Accounts[i].Credentials.ExpiresAt != expiresAt {
 				cfg.Accounts[i].Credentials.AccessToken = accessToken
 				cfg.Accounts[i].Credentials.RefreshToken = refreshToken
 				cfg.Accounts[i].Credentials.ExpiresAt = expiresAt

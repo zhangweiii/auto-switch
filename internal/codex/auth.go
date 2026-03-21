@@ -55,12 +55,16 @@ func AccountHome(alias string) string {
 	return filepath.Join(store.ConfigDir(), "codex", safe)
 }
 
-func ReadCurrentAuthRaw() ([]byte, error) {
-	return os.ReadFile(authPath(BaseHome()))
+func ReadAuthRaw(home string) ([]byte, error) {
+	return os.ReadFile(authPath(home))
 }
 
-func ReadCurrentAuth() (*AuthFile, []byte, error) {
-	raw, err := ReadCurrentAuthRaw()
+func ReadCurrentAuthRaw() ([]byte, error) {
+	return ReadAuthRaw(BaseHome())
+}
+
+func ReadAuth(home string) (*AuthFile, []byte, error) {
+	raw, err := ReadAuthRaw(home)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -71,10 +75,13 @@ func ReadCurrentAuth() (*AuthFile, []byte, error) {
 	return &auth, raw, nil
 }
 
-func ReadCurrentAccount() (*AccountInfo, error) {
-	auth, _, err := ReadCurrentAuth()
-	if err != nil {
-		return nil, err
+func ReadCurrentAuth() (*AuthFile, []byte, error) {
+	return ReadAuth(BaseHome())
+}
+
+func ReadAccountFromAuth(auth *AuthFile) (*AccountInfo, error) {
+	if auth == nil {
+		return nil, fmt.Errorf("missing Codex auth")
 	}
 	info := &AccountInfo{
 		AccountID: auth.Tokens.AccountID,
@@ -99,6 +106,14 @@ func ReadCurrentAccount() (*AccountInfo, error) {
 		return info, nil
 	}
 	return nil, fmt.Errorf("unsupported Codex auth mode: %q", auth.AuthMode)
+}
+
+func ReadCurrentAccount() (*AccountInfo, error) {
+	auth, _, err := ReadCurrentAuth()
+	if err != nil {
+		return nil, err
+	}
+	return ReadAccountFromAuth(auth)
 }
 
 func ActiveAccountID() string {

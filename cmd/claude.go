@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sync"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -52,16 +51,7 @@ func runClaude(accountAlias string, args []string) error {
 
 	// Multiple accounts: fetch usage concurrently and pick the best
 	fmt.Printf("Checking usage for %d accounts...\n", len(accounts))
-	usages := make([]*claude.Usage, len(accounts))
-	var wg sync.WaitGroup
-	for i, a := range accounts {
-		wg.Add(1)
-		go func(idx int, email, token string) {
-			defer wg.Done()
-			usages[idx] = claude.FetchUsageWithCache(token, email)
-		}(i, a.Email, a.Credentials.AccessToken)
-	}
-	wg.Wait()
+	usages := fetchClaudeUsages(accounts)
 
 	fmt.Println()
 	bestIdx := -1

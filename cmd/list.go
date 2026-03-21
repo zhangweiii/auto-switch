@@ -3,13 +3,11 @@ package cmd
 import (
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/zhangweiii/auto-switch/internal/claude"
 	"github.com/zhangweiii/auto-switch/internal/codex"
-	"github.com/zhangweiii/auto-switch/internal/store"
 )
 
 var listProvider string
@@ -56,17 +54,7 @@ func runClaudeList() error {
 
 	fmt.Printf("Claude Code accounts (%d)\n\n", len(accounts))
 
-	// Fetch usage concurrently
-	usages := make([]*claude.Usage, len(accounts))
-	var wg sync.WaitGroup
-	for i, a := range accounts {
-		wg.Add(1)
-		go func(idx int, email, token string) {
-			defer wg.Done()
-			usages[idx] = claude.FetchUsageWithCache(token, email)
-		}(i, a.Email, a.Credentials.AccessToken)
-	}
-	wg.Wait()
+	usages := fetchClaudeUsages(accounts)
 
 	header := fmt.Sprintf("  %-14s %-28s  %-24s  %s", "Alias", "Email", "5h window", "7d window")
 	fmt.Println(header)
@@ -156,18 +144,4 @@ func runCodexList() error {
 
 	fmt.Printf("\n* active account  refreshed at %s\n", time.Now().Format("15:04:05"))
 	return nil
-}
-
-func fetchCodexUsages(accounts []store.Account) []*codex.Usage {
-	usages := make([]*codex.Usage, len(accounts))
-	var wg sync.WaitGroup
-	wg.Add(len(accounts))
-	for i, a := range accounts {
-		go func(i int, a store.Account) {
-			defer wg.Done()
-			usages[i] = codex.FetchUsageWithCache(codex.AccountHome(a.Alias), a.Alias)
-		}(i, a)
-	}
-	wg.Wait()
-	return usages
 }
