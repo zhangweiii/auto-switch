@@ -72,20 +72,16 @@ func runClaudeList() error {
 		// Usage columns
 		var fhStr, sdStr string
 		if u.Error != "" {
-			fhStr = fmt.Sprintf("%-24s", "fetch failed")
-			sdStr = fmt.Sprintf("%-24s", "-")
+			fhStr = "fetch failed"
+			sdStr = "-"
 		} else {
-			age := ""
-			if u.Cached {
-				age = " ~" + u.CacheAge()
-			}
 			fhBar := claude.ProgressBar(u.FiveHourUtilization, 8)
 			sdBar := claude.ProgressBar(u.SevenDayUtilization, 8)
-			fhStr = fmt.Sprintf("%s %3.0f%% ↺%-6s%s", fhBar, u.FiveHourUtilization, claude.FormatResetIn(u.FiveHourResetsAt), age)
-			sdStr = fmt.Sprintf("%s %3.0f%% ↺%-6s", sdBar, u.SevenDayUtilization, claude.FormatResetIn(u.SevenDayResetsAt))
+			fhStr = fmt.Sprintf("%s %3.0f%% ↺%s", fhBar, u.FiveHourUtilization, claude.FormatResetIn(u.FiveHourResetsAt))
+			sdStr = fmt.Sprintf("%s %3.0f%% ↺%s", sdBar, u.SevenDayUtilization, claude.FormatResetIn(u.SevenDayResetsAt))
 		}
 
-		fmt.Printf("%s%-14s %-28s  %-24s  %s\n",
+		fmt.Printf("%s%-14s %-28s  %-23s  %s\n",
 			marker, a.Alias, a.Email, fhStr, sdStr)
 	}
 

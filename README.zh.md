@@ -227,8 +227,10 @@ work (user2@example.com)
 
 Claude Code 会不定期静默刷新 OAuth token。auto-switch 会通过两种方式保持同步：
 
-- 每次运行时，自动对比当前活跃 Claude Code 账号在 Keychain / 凭证文件中的最新 token 与 `accounts.json` 中存储的值，不一致就自动更新。
+- 每次运行时，读取当前活跃 Claude Code 账号的**邮箱地址**，在 `accounts.json` 中按邮箱找到对应账号，然后从 Keychain / 凭证文件同步最新的 token。
 - 在 `auto-switch claude` 和 `auto-switch list` 时，会对所有即将在 1 小时内过期的 Claude 账号使用各自的 `refresh_token` 主动刷新凭证。仍有足够有效期的 token 不会被触碰，以避免与 Claude Code 自身的后台 token 轮换产生竞争。
+
+这种按邮箱匹配的机制确保即使同时运行多个不同账号的 Claude 实例，各账号的凭证也能独立同步，不会互相覆盖。
 
 你不需要因为 token 被轮换而重新运行 `login`。
 

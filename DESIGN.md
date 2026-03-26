@@ -322,9 +322,12 @@ select the account with the lowest score
 ### 6.2 Token Auto-Sync
 
 Claude Code silently refreshes the OAuth token. On every `list`, `status`, and `claude` invocation, auto-switch:
-1. Reads the current active email from `~/.claude.json`
-2. Reads the latest token from Keychain / credentials file
-3. If the token differs from what is stored, updates `accounts.json` automatically
+1. Reads the current active **email address** from `~/.claude.json`
+2. Finds the matching account in `accounts.json` by email
+3. Reads the latest token from Keychain / credentials file
+4. If the token differs from what is stored, updates that account's credentials automatically
+
+This email-based matching ensures that even when multiple Claude instances are running with different accounts, each account's credentials are synced independently without overwriting the wrong one.
 
 Additionally, on `auto-switch list` and `auto-switch claude`, auto-switch refreshes every saved Claude account directly through the OAuth refresh-token flow before querying usage or switching accounts. This prevents infrequently selected accounts from sitting idle long enough for their credentials to expire.
 

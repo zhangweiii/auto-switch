@@ -45,13 +45,14 @@ func (c Credentials) FormatExpiry() string {
 }
 
 type Credentials struct {
-	AccessToken  string   `json:"access_token"`
-	RefreshToken string   `json:"refresh_token"`
-	ExpiresAt    int64    `json:"expires_at"` // unix ms
-	IDToken      string   `json:"id_token,omitempty"`
-	AccountID    string   `json:"account_id,omitempty"`
-	AuthMode     string   `json:"auth_mode,omitempty"`
-	Scopes       []string `json:"scopes,omitempty"`
+	AccessToken  string    `json:"access_token"`
+	RefreshToken string    `json:"refresh_token"`
+	ExpiresAt    int64     `json:"expires_at"` // unix ms
+	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	IDToken      string    `json:"id_token,omitempty"`
+	AccountID    string    `json:"account_id,omitempty"`
+	AuthMode     string    `json:"auth_mode,omitempty"`
+	Scopes       []string  `json:"scopes,omitempty"`
 }
 
 type Account struct {
@@ -142,6 +143,24 @@ func (c *Config) AddAccount(a Account) error {
 func (c *Config) FindByAlias(alias, provider string) *Account {
 	for i := range c.Accounts {
 		if c.Accounts[i].Alias == alias && c.Accounts[i].Provider == provider {
+			return &c.Accounts[i]
+		}
+	}
+	return nil
+}
+
+func (c *Config) FindByEmail(email, provider string) *Account {
+	for i := range c.Accounts {
+		if c.Accounts[i].Email == email && c.Accounts[i].Provider == provider {
+			return &c.Accounts[i]
+		}
+	}
+	return nil
+}
+
+func (c *Config) FindByAccountID(accountID, provider string) *Account {
+	for i := range c.Accounts {
+		if c.Accounts[i].AccountUUID == accountID && c.Accounts[i].Provider == provider {
 			return &c.Accounts[i]
 		}
 	}

@@ -227,8 +227,10 @@ Cache behaviour:
 
 Claude Code silently rotates its OAuth token from time to time. auto-switch keeps this in sync in two ways:
 
-- On every invocation, it compares the currently active Claude Code token in Keychain / credentials file with the stored value and updates `accounts.json` if they differ.
+- On every invocation, it reads the **email address** of the currently active Claude Code account, finds the matching account in `accounts.json` by email, and syncs the latest token from Keychain / credentials file to auto-switch storage.
 - On `auto-switch claude` and `auto-switch list`, it proactively refreshes any saved Claude account whose token expires within the next hour using that account's `refresh_token`. Tokens with plenty of remaining validity are left untouched to avoid racing with Claude Code's own background refresh rotation.
+
+This email-based matching ensures that even if multiple Claude instances are running with different accounts, each account's credentials are synced independently without overwriting the wrong one.
 
 You never need to re-run `login` just because a token was rotated.
 

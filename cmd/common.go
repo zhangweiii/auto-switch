@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/zhangweiii/auto-switch/internal/claude"
 	"github.com/zhangweiii/auto-switch/internal/codex"
@@ -11,32 +12,31 @@ import (
 )
 
 // loadAndSync loads config and auto-syncs the active account's token from Keychain.
+// It syncs based on email matching - if Claude is logged in as account A,
+// we update auto-switch's stored credentials for account A.
 func loadAndSync() (*store.Config, error) {
 	cfg, err := store.Load()
 	if err != nil {
 		return nil, err
 	}
 
-	activeEmail := claude.ActiveEmail()
-	readToken := func() (string, string, int64, error) {
-		t, err := claude.ReadCurrentCredentials()
-		if err != nil {
-			return "", "", 0, err
-		}
-		return t.AccessToken, t.RefreshToken, t.ExpiresAt, nil
-	}
-
 	updated := false
-	if synced, err := store.SyncActiveToken(cfg, readToken, activeEmail); err == nil && synced {
+
+	// Sync Claude: read current claude credentials and sync to auto-switch by email
+	if synced := syncClaudeToStore(cfg); synced {
 		updated = true
 	}
 
-	if syncActiveCodexAuth(cfg) {
+	// Sync Codex: read current codex credentials and sync to auto-switch by email/accountID
+	if synced := syncCodexToStore(cfg); synced {
 		updated = true
 	}
-	if syncSavedCodexAuths(cfg) {
+
+	// Sync from each Codex account's isolated home directory
+	if synced := syncCodexAccountHomes(cfg); synced {
 		updated = true
 	}
+
 	if updated {
 		_ = store.Save(cfg)
 	}
@@ -44,40 +44,110 @@ func loadAndSync() (*store.Config, error) {
 	return cfg, nil
 }
 
-func syncActiveCodexAuth(cfg *store.Config) bool {
+// syncClaudeToStore reads Claude's current credentials and updates auto-switch
+// storage if the same email account exists and has newer credentials.
+func syncClaudeToStore(cfg *store.Config) bool {
+	activeEmail := claude.ActiveEmail()
+	if activeEmail == "" {
+		return false
+	}
+
+	// Find account by email in auto-switch storage
+	account := cfg.FindByEmail(activeEmail, "claude")
+	if account == nil {
+		return false
+	}
+
+	// Read current Claude credentials
+	currentToken, err := claude.ReadCurrentCredentials()
+	if err != nil {
+		return false
+	}
+
+	// Check if Claude's credentials are different/newer
+	if account.Credentials.AccessToken == currentToken.AccessToken &&
+		account.Credentials.RefreshToken == currentToken.RefreshToken &&
+		account.Credentials.ExpiresAt == currentToken.ExpiresAt {
+		return false
+	}
+
+	// Update auto-switch storage with Claude's current credentials
+	account.Credentials.AccessToken = currentToken.AccessToken
+	account.Credentials.RefreshToken = currentToken.RefreshToken
+	account.Credentials.ExpiresAt = currentToken.ExpiresAt
+	account.Credentials.UpdatedAt = time.Now()
+	if len(currentToken.Scopes) > 0 {
+		account.Credentials.Scopes = currentToken.Scopes
+	}
+
+	fmt.Printf("synced Claude credentials for %q from active session\n", account.Alias)
+	return true
+}
+
+// syncCodexToStore reads Codex's current credentials and updates auto-switch
+// storage if the same account (by email or accountID) exists and has newer credentials.
+func syncCodexToStore(cfg *store.Config) bool {
 	auth, rawAuth, err := codex.ReadCurrentAuth()
 	if err != nil {
 		return false
 	}
 
-	account, err := codex.ReadAccountFromAuth(auth)
+	accountInfo, err := codex.ReadAccountFromAuth(auth)
 	if err != nil {
-		account = &codex.AccountInfo{
+		// Fallback: use AccountID only
+		accountInfo = &codex.AccountInfo{
 			AccountID: auth.Tokens.AccountID,
 			AuthMode:  auth.AuthMode,
 		}
 	}
 
-	for i := range cfg.Accounts {
-		a := cfg.Accounts[i]
-		if a.Provider != "codex" {
-			continue
-		}
-		if a.Credentials.AccountID != "" && a.Credentials.AccountID != auth.Tokens.AccountID {
-			continue
-		}
-		if account.Email != "" && a.Email != "" && a.Email != account.Email {
-			continue
-		}
-
-		updated := syncCodexAccountRecord(&cfg.Accounts[i], auth, rawAuth, account)
-		_, _ = codex.EnsureAccountHome(cfg.Accounts[i].Alias, rawAuth)
-		return updated
+	// Try to find account by email first, then by accountID
+	var account *store.Account
+	if accountInfo.Email != "" {
+		account = cfg.FindByEmail(accountInfo.Email, "codex")
 	}
-	return false
+	if account == nil && accountInfo.AccountID != "" {
+		account = cfg.FindByAccountID(accountInfo.AccountID, "codex")
+	}
+	if account == nil {
+		return false
+	}
+
+	// Check if credentials changed
+	if account.Credentials.AccessToken == auth.Tokens.AccessToken &&
+		account.Credentials.RefreshToken == auth.Tokens.RefreshToken &&
+		account.Credentials.IDToken == auth.Tokens.IDToken &&
+		account.RawAuth == string(rawAuth) {
+		return false
+	}
+
+	// Update credentials
+	account.Credentials.AccessToken = auth.Tokens.AccessToken
+	account.Credentials.RefreshToken = auth.Tokens.RefreshToken
+	account.Credentials.IDToken = auth.Tokens.IDToken
+	account.Credentials.AccountID = auth.Tokens.AccountID
+	account.Credentials.AuthMode = auth.AuthMode
+	account.Credentials.UpdatedAt = time.Now()
+	account.RawAuth = string(rawAuth)
+
+	// Update account info if available
+	if accountInfo.Email != "" {
+		account.Email = accountInfo.Email
+		account.DisplayName = accountInfo.Email
+	}
+	if accountInfo.AccountID != "" {
+		account.AccountUUID = accountInfo.AccountID
+	}
+
+	// Ensure isolated account home
+	_, _ = codex.EnsureAccountHome(account.Alias, rawAuth)
+
+	fmt.Printf("synced Codex credentials for %q from active session\n", account.Alias)
+	return true
 }
 
-func syncSavedCodexAuths(cfg *store.Config) bool {
+// syncCodexAccountHomes syncs credentials from each account's isolated home directory.
+func syncCodexAccountHomes(cfg *store.Config) bool {
 	updated := false
 
 	for i := range cfg.Accounts {
@@ -91,14 +161,15 @@ func syncSavedCodexAuths(cfg *store.Config) bool {
 			continue
 		}
 
-		account, err := codex.ReadAccountFromAuth(auth)
+		accountInfo, err := codex.ReadAccountFromAuth(auth)
 		if err != nil {
-			account = &codex.AccountInfo{
+			accountInfo = &codex.AccountInfo{
 				AccountID: auth.Tokens.AccountID,
 				AuthMode:  auth.AuthMode,
 			}
 		}
-		if syncCodexAccountRecord(&cfg.Accounts[i], auth, rawAuth, account) {
+
+		if syncCodexAccountRecord(&cfg.Accounts[i], auth, rawAuth, accountInfo) {
 			fmt.Printf("auto-synced Codex auth for %q\n", a.Alias)
 			updated = true
 		}
@@ -147,6 +218,10 @@ func syncCodexAccountRecord(a *store.Account, auth *codex.AuthFile, rawAuth []by
 			a.DisplayName = account.Email
 			updated = true
 		}
+	}
+
+	if updated {
+		a.Credentials.UpdatedAt = time.Now()
 	}
 
 	return updated
@@ -213,6 +288,7 @@ func refreshClaudeCredentials(cfg *store.Config) error {
 			cfg.Accounts[t.index].Credentials.RefreshToken = refreshed.RefreshToken
 			cfg.Accounts[t.index].Credentials.ExpiresAt = refreshed.ExpiresAt
 			cfg.Accounts[t.index].Credentials.Scopes = refreshed.Scopes
+			cfg.Accounts[t.index].Credentials.UpdatedAt = time.Now()
 			updated = true
 			mu.Unlock()
 		}(task)
