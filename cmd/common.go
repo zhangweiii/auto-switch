@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -24,6 +25,11 @@ func loadAndSync() (*store.Config, error) {
 
 	// Sync Claude: read current claude credentials and sync to auto-switch by email
 	if synced := syncClaudeToStore(cfg); synced {
+		updated = true
+	}
+
+	// Sync from each Claude account's isolated home directory
+	if synced := syncClaudeAccountHomes(cfg); synced {
 		updated = true
 	}
 
@@ -78,6 +84,12 @@ func syncClaudeToStore(cfg *store.Config) bool {
 	account.Credentials.UpdatedAt = time.Now()
 	if len(currentToken.Scopes) > 0 {
 		account.Credentials.Scopes = currentToken.Scopes
+	}
+	if currentToken.SubscriptionType != "" {
+		account.Credentials.SubscriptionType = currentToken.SubscriptionType
+	}
+	if currentToken.RateLimitTier != "" {
+		account.Credentials.RateLimitTier = currentToken.RateLimitTier
 	}
 
 	fmt.Printf("synced Claude credentials for %q from active session\n", account.Alias)
@@ -144,6 +156,41 @@ func syncCodexToStore(cfg *store.Config) bool {
 
 	fmt.Printf("synced Codex credentials for %q from active session\n", account.Alias)
 	return true
+}
+
+// syncClaudeAccountHomes syncs credentials from each Claude account's isolated home directory.
+// This picks up tokens refreshed by Claude Code during a session.
+func syncClaudeAccountHomes(cfg *store.Config) bool {
+	updated := false
+	for i := range cfg.Accounts {
+		a := cfg.Accounts[i]
+		if a.Provider != "claude" {
+			continue
+		}
+		home := claude.AccountHome(a.Alias)
+		token, err := claude.ReadCredentialsFromHome(home)
+		if err != nil {
+			continue
+		}
+		if cfg.Accounts[i].Credentials.AccessToken == token.AccessToken &&
+			cfg.Accounts[i].Credentials.RefreshToken == token.RefreshToken &&
+			cfg.Accounts[i].Credentials.ExpiresAt == token.ExpiresAt {
+			continue
+		}
+		cfg.Accounts[i].Credentials.AccessToken = token.AccessToken
+		cfg.Accounts[i].Credentials.RefreshToken = token.RefreshToken
+		cfg.Accounts[i].Credentials.ExpiresAt = token.ExpiresAt
+		cfg.Accounts[i].Credentials.UpdatedAt = time.Now()
+		if token.SubscriptionType != "" {
+			cfg.Accounts[i].Credentials.SubscriptionType = token.SubscriptionType
+		}
+		if token.RateLimitTier != "" {
+			cfg.Accounts[i].Credentials.RateLimitTier = token.RateLimitTier
+		}
+		fmt.Printf("auto-synced Claude credentials for %q from isolated home\n", a.Alias)
+		updated = true
+	}
+	return updated
 }
 
 // syncCodexAccountHomes syncs credentials from each account's isolated home directory.
@@ -266,10 +313,12 @@ func refreshClaudeCredentials(cfg *store.Config) error {
 			defer wg.Done()
 
 			refreshed, err := claude.RefreshCredentials(&claude.OAuthToken{
-				AccessToken:  t.account.Credentials.AccessToken,
-				RefreshToken: t.account.Credentials.RefreshToken,
-				ExpiresAt:    t.account.Credentials.ExpiresAt,
-				Scopes:       t.account.Credentials.Scopes,
+				AccessToken:      t.account.Credentials.AccessToken,
+				RefreshToken:     t.account.Credentials.RefreshToken,
+				ExpiresAt:        t.account.Credentials.ExpiresAt,
+				Scopes:           t.account.Credentials.Scopes,
+				SubscriptionType: t.account.Credentials.SubscriptionType,
+				RateLimitTier:    t.account.Credentials.RateLimitTier,
 			})
 			if err != nil {
 				fmt.Printf("warning: refresh credentials for %q failed: %v\n", t.account.Alias, err)
@@ -291,6 +340,12 @@ func refreshClaudeCredentials(cfg *store.Config) error {
 			cfg.Accounts[t.index].Credentials.UpdatedAt = time.Now()
 			updated = true
 			mu.Unlock()
+
+			// Keep isolated home in sync with refreshed credentials
+			home := claude.AccountHome(t.account.Alias)
+			if _, statErr := os.Stat(home); statErr == nil {
+				_ = claude.WriteCredentialsToHome(home, refreshed)
+			}
 		}(task)
 	}
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -93,35 +94,61 @@ func runClaude(accountAlias string, args []string) error {
 	return switchAndLaunch(chosen, args)
 }
 
-// switchAndLaunch writes credentials and replaces the current process with claude.
+// switchAndLaunch prepares an isolated home for the account and replaces the
+// current process with claude, pointing HOME at the isolated directory so that
+// credentials and account info are per-account and terminals don't overwrite
+// each other's global state.
 func switchAndLaunch(a store.Account, args []string) error {
 	token := &claude.OAuthToken{
-		AccessToken:  a.Credentials.AccessToken,
-		RefreshToken: a.Credentials.RefreshToken,
-		ExpiresAt:    a.Credentials.ExpiresAt,
+		AccessToken:      a.Credentials.AccessToken,
+		RefreshToken:     a.Credentials.RefreshToken,
+		ExpiresAt:        a.Credentials.ExpiresAt,
+		Scopes:           a.Credentials.Scopes,
+		SubscriptionType: a.Credentials.SubscriptionType,
+		RateLimitTier:    a.Credentials.RateLimitTier,
 	}
-
-	if err := claude.WriteCredentials(token); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to write credentials: %v\n", err)
-	}
-
-	_ = claude.WriteAccountInfo(&claude.OAuthAccount{
+	accountInfo := &claude.OAuthAccount{
 		AccountUUID:      a.AccountUUID,
 		EmailAddress:     a.Email,
 		OrganizationUUID: a.OrgUUID,
 		OrganizationName: a.OrgName,
 		DisplayName:      a.DisplayName,
-	})
+	}
+
+	isolatedHome, err := claude.EnsureAccountHome(a.Alias, token, accountInfo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to prepare isolated home: %v\n", err)
+	}
 
 	claudePath, err := exec.LookPath("claude")
 	if err != nil {
 		return fmt.Errorf("claude command not found: %v", err)
 	}
 
-	// Inject token via env var (highest priority)
-	env := os.Environ()
+	env := removeEnv(os.Environ(), "HOME", "CLAUDE_CODE_OAUTH_TOKEN")
 	env = append(env, "CLAUDE_CODE_OAUTH_TOKEN="+a.Credentials.AccessToken)
+	if isolatedHome != "" {
+		env = append(env, "HOME="+isolatedHome)
+	}
 
 	argv := append([]string{"claude"}, args...)
 	return syscall.Exec(claudePath, argv, env)
+}
+
+// removeEnv returns a copy of env with entries for the given keys removed.
+func removeEnv(env []string, keys ...string) []string {
+	result := make([]string, 0, len(env))
+	for _, e := range env {
+		keep := true
+		for _, key := range keys {
+			if strings.HasPrefix(e, key+"=") {
+				keep = false
+				break
+			}
+		}
+		if keep {
+			result = append(result, e)
+		}
+	}
+	return result
 }

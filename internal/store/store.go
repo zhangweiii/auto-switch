@@ -45,14 +45,16 @@ func (c Credentials) FormatExpiry() string {
 }
 
 type Credentials struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	ExpiresAt    int64     `json:"expires_at"` // unix ms
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
-	IDToken      string    `json:"id_token,omitempty"`
-	AccountID    string    `json:"account_id,omitempty"`
-	AuthMode     string    `json:"auth_mode,omitempty"`
-	Scopes       []string  `json:"scopes,omitempty"`
+	AccessToken      string    `json:"access_token"`
+	RefreshToken     string    `json:"refresh_token"`
+	ExpiresAt        int64     `json:"expires_at"` // unix ms
+	UpdatedAt        time.Time `json:"updated_at,omitempty"`
+	IDToken          string    `json:"id_token,omitempty"`
+	AccountID        string    `json:"account_id,omitempty"`
+	AuthMode         string    `json:"auth_mode,omitempty"`
+	Scopes           []string  `json:"scopes,omitempty"`
+	SubscriptionType string    `json:"subscription_type,omitempty"`
+	RateLimitTier    string    `json:"rate_limit_tier,omitempty"`
 }
 
 type Account struct {

@@ -92,10 +92,13 @@ func runClaudeLogin(alias string) error {
 		Email:    account.EmailAddress,
 		Provider: "claude",
 		Credentials: store.Credentials{
-			AccessToken:  cred.AccessToken,
-			RefreshToken: cred.RefreshToken,
-			ExpiresAt:    cred.ExpiresAt,
-			UpdatedAt:    time.Now(),
+			AccessToken:      cred.AccessToken,
+			RefreshToken:     cred.RefreshToken,
+			ExpiresAt:        cred.ExpiresAt,
+			SubscriptionType: cred.SubscriptionType,
+			RateLimitTier:    cred.RateLimitTier,
+			Scopes:           cred.Scopes,
+			UpdatedAt:        time.Now(),
 		},
 		OrgUUID:     account.OrganizationUUID,
 		AccountUUID: account.AccountUUID,
@@ -109,6 +112,10 @@ func runClaudeLogin(alias string) error {
 	}
 	if err := store.Save(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %v", err)
+	}
+
+	if _, err := claude.EnsureAccountHome(alias, cred, account); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to prepare isolated home for %q: %v\n", alias, err)
 	}
 
 	fmt.Printf("✓ Account %q (%s) saved\n", alias, account.EmailAddress)
